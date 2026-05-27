@@ -10,7 +10,7 @@
   <div class="app">
     <header>
       <h1>Archive Splitter Processor</h1>
-      <p class="subtitle">Rename · Merge/Split · Zip · Upload to Archive.org</p>
+      <p class="subtitle">Rename · Split · Zip · Upload to Archive.org</p>
     </header>
 
     <!-- Source + Output folder -->
@@ -46,7 +46,7 @@
       <p class="hint">Applied to .cue, .cdg, and all .bin files before the " (Track ##)" suffix.</p>
     </section>
 
-    <!-- Bin layout / merge / split -->
+    <!-- Bin layout / split -->
     <section class="card" id="layout-card">
       <div class="section-header">
         <span class="section-title">Bin Layout</span>
@@ -54,7 +54,6 @@
       </div>
       <p id="layout-desc" class="hint" style="margin-top:0">Select a folder to detect the disc layout.</p>
       <div class="row gap-sm" id="layout-actions" style="display:none">
-        <button id="merge-btn" class="btn" disabled title="Combine multiple per-track .bin files into one">Merge → Single .bin</button>
         <button id="split-btn" class="btn" disabled title="Extract each track from a single .bin into separate files">Split → Per-track .bins</button>
       </div>
     </section>

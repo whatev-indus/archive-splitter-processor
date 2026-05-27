@@ -171,81 +171,6 @@ fn parse_cue_full(cue_path: &Path) -> Result<ParsedCue, String> {
     Ok(ParsedCue { files, blocksize })
 }
 
-// ── Merge: multi-bin → single bin ─────────────────────────────────────────────
-
-/// Generate a merged CUE (single FILE entry, all INDEX absolute in merged bin).
-fn gen_merged_cue(base_name: &str, files: &[CueFile], blocksize: u64) -> String {
-    let mut out = format!("FILE \"{}.bin\" BINARY\n", base_name);
-    let mut sector_offset = 0u64;
-    for f in files {
-        for t in &f.tracks {
-            out += &format!("  TRACK {:02} {}\n", t.num, t.track_type);
-            for i in &t.indexes {
-                let abs = sectors_to_msf(sector_offset + i.sectors);
-                out += &format!("    INDEX {:02} {}\n", i.id, abs);
-            }
-        }
-        sector_offset += f.size_bytes / blocksize;
-    }
-    out
-}
-
-fn merge_blocking(
-    app: &AppHandle,
-    cue_path: &Path,
-    base_name: &str,
-    out_dir: &Path,
-) -> Result<String, String> {
-    let ParsedCue { files, blocksize } = parse_cue_full(cue_path)?;
-
-    if files.is_empty() {
-        return Err("No FILE entries found in CUE".to_string());
-    }
-    if files.len() == 1 {
-        return Err("CUE already references a single bin file — nothing to merge".to_string());
-    }
-
-    emit_log(app, format!("Merging {} bin files…", files.len()));
-
-    let merged_bin = out_dir.join(format!("{}.bin", base_name));
-    if merged_bin.exists() {
-        return Err(format!("Output file already exists: {}", merged_bin.display()));
-    }
-
-    let mut out =
-        fs::File::create(&merged_bin).map_err(|e| format!("Cannot create merged bin: {e}"))?;
-
-    const CHUNK: usize = 1 << 20; // 1 MiB
-    let mut buf = vec![0u8; CHUNK];
-
-    for f in &files {
-        let fname = f
-            .path
-            .file_name()
-            .unwrap_or_default()
-            .to_string_lossy()
-            .to_string();
-        emit_log(app, format!("  appending {}", fname));
-        let mut src = fs::File::open(&f.path)
-            .map_err(|e| format!("Cannot open {}: {e}", f.path.display()))?;
-        loop {
-            let n = src.read(&mut buf).map_err(|e| format!("Read error: {e}"))?;
-            if n == 0 { break; }
-            out.write_all(&buf[..n]).map_err(|e| format!("Write error: {e}"))?;
-        }
-    }
-    drop(out);
-
-    let merged_cue_content = gen_merged_cue(base_name, &files, blocksize);
-    let merged_cue = out_dir.join(format!("{}.cue", base_name));
-    fs::write(&merged_cue, merged_cue_content)
-        .map_err(|e| format!("Cannot write merged CUE: {e}"))?;
-
-    emit_log(app, format!("Merged bin  : {}", merged_bin.display()));
-    emit_log(app, format!("Merged CUE  : {}", merged_cue.display()));
-    Ok(merged_bin.to_string_lossy().to_string())
-}
-
 // ── Split: single bin → per-track bins ────────────────────────────────────────
 
 /// Generate a split CUE (one FILE per track, each INDEX 0-relative).
@@ -278,7 +203,7 @@ fn split_blocking(
     }
     if files.len() > 1 {
         return Err(
-            "CUE references multiple bin files — run Merge first, then Split".to_string(),
+            "CUE references multiple bin files — Split only works on a single-bin disc.".to_string(),
         );
     }
     let merged_file = &files[0];
@@ -648,34 +573,6 @@ pub fn detect_layout(folder: String) -> Result<LayoutInfo, String> {
             track_count: 0,
         }),
     }
-}
-
-#[tauri::command]
-pub async fn bin_merge(
-    app: AppHandle,
-    folder: String,
-    base_name: String,
-) -> Result<String, String> {
-    let folder = PathBuf::from(&folder);
-    let base_name = base_name.trim().to_string();
-
-    // Find the .cue in the folder
-    let cue_path = fs::read_dir(&folder)
-        .map_err(|e| e.to_string())?
-        .flatten()
-        .map(|e| e.path())
-        .find(|p| {
-            p.extension()
-                .and_then(|x| x.to_str())
-                .map_or(false, |x| x.eq_ignore_ascii_case("cue"))
-        })
-        .ok_or_else(|| "No .cue file found in folder".to_string())?;
-
-    tauri::async_runtime::spawn_blocking(move || {
-        merge_blocking(&app, &cue_path, &base_name, &folder)
-    })
-    .await
-    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]

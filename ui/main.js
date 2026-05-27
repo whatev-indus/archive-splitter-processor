@@ -21,7 +21,6 @@ const baseNameInput   = document.getElementById('base-name');
 const layoutBadge     = document.getElementById('layout-badge');
 const layoutDesc      = document.getElementById('layout-desc');
 const layoutActions   = document.getElementById('layout-actions');
-const mergeBtn        = document.getElementById('merge-btn');
 const splitBtn        = document.getElementById('split-btn');
 const uploadToggle    = document.getElementById('upload-toggle');
 const archiveFields   = document.getElementById('archive-fields');
@@ -66,9 +65,9 @@ listen('log', (event) => {
 // ── Layout badge helpers ───────────────────────────────────────────────────────
 
 const LAYOUT_META = {
-  'multi-bin':           { cls: 'badge-multi',  label: 'Multi-bin',        desc: (t, b) => `${b} separate .bin files, ${t} tracks total — ready to merge into one .bin.` },
+  'multi-bin':           { cls: 'badge-multi',  label: 'Multi-bin',        desc: (t, b) => `${b} separate .bin files, ${t} tracks total.` },
   'single-multi-track':  { cls: 'badge-split',  label: 'Single-bin multi', desc: (t)    => `Single .bin, ${t} tracks — can be split into per-track files.` },
-  'single-single-track': { cls: 'badge-single', label: 'Single-bin',       desc: ()     => 'Single .bin, single track — no merge or split needed.' },
+  'single-single-track': { cls: 'badge-single', label: 'Single-bin',       desc: ()     => 'Single .bin, single track.' },
   'no-cue':              { cls: 'badge-error',  label: 'No CUE',           desc: ()     => 'No .cue sheet found in this folder.' },
   'unknown':             { cls: 'badge-dim',    label: 'Unknown',           desc: ()     => 'Could not determine layout.' },
 };
@@ -81,7 +80,6 @@ function setLayout(kind, trackCount, binCount) {
   layoutDesc.textContent  = meta.desc(trackCount, binCount);
 
   layoutActions.style.display = 'flex';
-  mergeBtn.disabled = (kind !== 'multi-bin');
   splitBtn.disabled = (kind !== 'single-multi-track');
 }
 
@@ -90,7 +88,6 @@ function resetLayout() {
   layoutBadge.className   = 'badge badge-dim';
   layoutDesc.textContent  = 'Select a folder to detect the disc layout.';
   layoutActions.style.display = 'none';
-  mergeBtn.disabled = true;
   splitBtn.disabled = true;
 }
 
@@ -192,7 +189,7 @@ function validateUpload() {
 }
 
 function setWorking(working) {
-  [previewBtn, renameBtn, zipBtn, uploadBtn, runAllBtn, browseBtn, mergeBtn, splitBtn]
+  [previewBtn, renameBtn, zipBtn, uploadBtn, runAllBtn, browseBtn, splitBtn]
     .forEach(btn => { btn.disabled = working; });
   if (!working) {
     uploadBtn.disabled = !uploadToggle.checked || !currentZipPath;
@@ -200,27 +197,6 @@ function setWorking(working) {
     if (currentFolder) detectLayout(currentFolder).catch(() => {});
   }
 }
-
-// ── Merge ─────────────────────────────────────────────────────────────────────
-
-mergeBtn.addEventListener('click', async () => {
-  if (!validateBase()) return;
-  logSep();
-  logHeading('Merging bins → single .bin…');
-  setWorking(true);
-  try {
-    const outBin = await invoke('bin_merge', {
-      folder: currentFolder,
-      baseName: baseNameInput.value.trim(),
-    });
-    logOk(`Merged bin: ${outBin}`);
-    await detectLayout(currentFolder);
-  } catch (err) {
-    logError(`Merge failed: ${err}`);
-  } finally {
-    setWorking(false);
-  }
-});
 
 // ── Split ─────────────────────────────────────────────────────────────────────
 

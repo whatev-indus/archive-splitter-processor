@@ -8,7 +8,6 @@ pub fn run() {
             commands::detect_layout,
             commands::preview_rename,
             commands::do_rename,
-            commands::bin_merge,
             commands::bin_split,
             commands::create_zip,
             commands::upload_to_archive,
