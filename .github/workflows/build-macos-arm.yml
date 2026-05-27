@@ -5,6 +5,9 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: write   # needed to create/update releases
+
 jobs:
   build-macos-arm:
     name: macOS ARM (Apple Silicon)
@@ -31,9 +34,18 @@ jobs:
           APPLE_SIGNING_IDENTITY: "-"   # ad-hoc signing; replace with cert for distribution
         run: cargo tauri build --target aarch64-apple-darwin
 
-      - name: Upload DMG artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: archive-splitter-processor-macos-arm
-          path: src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
-          if-no-files-found: warn
+      - name: Publish to GitHub Releases
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          DMG=$(ls src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg)
+          VERSION=$(grep '^version' src-tauri/Cargo.toml | head -1 | cut -d'"' -f2)
+          TAG="v${VERSION}"
+          # Replace any existing release for this version so re-runs don't fail
+          gh release delete "$TAG" --yes 2>/dev/null || true
+          gh release create "$TAG" \
+            --title "v${VERSION} — macOS ARM (Apple Silicon)" \
+            --notes "**Download:** \`$(basename "$DMG")\`
+          Built from commit ${{ github.sha }} on \`macos-14\` (aarch64).
+          Ad-hoc signed — on first launch right-click → Open to bypass Gatekeeper." \
+            "$DMG"
