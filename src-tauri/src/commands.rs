@@ -360,24 +360,71 @@ pub struct RenamePreview {
     pub kind: String,
 }
 
-/// Returns the `(Track ##).bin` tail from a filename, if present.
-fn track_suffix(name: &str) -> Option<&str> {
+/// Extract a track number from a filename, supporting multiple conventions:
+///   - `(Track 1).bin`  or  `(Track 01).bin`
+///   - `01 - Track  1.bin`  (ripped with EAC / similar, variable whitespace)
+///   - `Track01.bin`
+fn extract_track_num(name: &str) -> Option<u32> {
     let lower = name.to_lowercase();
-    let pos = lower.find("(track ")?;
-    Some(&name[pos..])
+
+    // Pattern 1: "(Track N)" — redump / existing format
+    if let Some(pos) = lower.find("(track ") {
+        let rest = &lower[pos + 7..];
+        let end = rest.find(|c: char| !c.is_ascii_digit()).unwrap_or(rest.len());
+        if end > 0 {
+            return rest[..end].parse().ok();
+        }
+    }
+
+    // Pattern 2: "track" followed by optional whitespace then digits
+    if let Some(pos) = lower.find("track") {
+        let after = lower[pos + 5..].trim_start().to_string();
+        let end = after.find(|c: char| !c.is_ascii_digit()).unwrap_or(after.len());
+        if end > 0 {
+            return after[..end].parse().ok();
+        }
+    }
+
+    None
+}
+
+/// Format a track suffix with zero-padding when total > 9.
+fn format_track_suffix(num: u32, total: usize) -> String {
+    if total > 9 {
+        format!("(Track {:02})", num)
+    } else {
+        format!("(Track {})", num)
+    }
 }
 
 pub fn compute_renames(folder: &Path, base_name: &str) -> Result<Vec<RenamePreview>, String> {
-    let mut previews: Vec<RenamePreview> = Vec::new();
-
-    for entry in fs::read_dir(folder)
+    let all_entries: Vec<_> = fs::read_dir(folder)
         .map_err(|e| format!("Cannot read folder: {e}"))?
         .flatten()
-    {
+        .filter(|e| e.path().is_file())
+        .collect();
+
+    // Count extensions to decide formatting modes.
+    let bin_count = all_entries.iter().filter(|e| {
+        e.path().extension().and_then(|x| x.to_str())
+            .map_or(false, |x| x.eq_ignore_ascii_case("bin"))
+    }).count();
+
+    let cdg_count = all_entries.iter().filter(|e| {
+        e.path().extension().and_then(|x| x.to_str())
+            .map_or(false, |x| x.eq_ignore_ascii_case("cdg"))
+    }).count();
+
+    // More than one .cdg → per-track sidecar files, not a single monolithic subcode.
+    let per_track_cdg = cdg_count > 1;
+
+    // Use the larger of the two as the reference total for zero-padding.
+    let track_total = bin_count.max(cdg_count);
+
+    let mut previews: Vec<RenamePreview> = Vec::new();
+
+    for entry in &all_entries {
         let path = entry.path();
-        if !path.is_file() {
-            continue;
-        }
         let name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
         let ext = path
             .extension()
@@ -388,18 +435,26 @@ pub fn compute_renames(folder: &Path, base_name: &str) -> Result<Vec<RenamePrevi
 
         let (new_name, kind) = match ext.as_str() {
             "bin" => {
-                let Some(suffix) = track_suffix(&name) else { continue };
-                (format!("{} {}", base_name, suffix), "bin")
+                let Some(num) = extract_track_num(&name) else { continue };
+                let suffix = format_track_suffix(num, track_total);
+                (format!("{} {}.bin", base_name, suffix), "bin")
             }
             "cue" => (format!("{}.cue", base_name), "cue"),
             "cdg" => {
-                let stem =
-                    path.file_stem().unwrap_or_default().to_string_lossy().to_string();
-                let qualifier = stem
-                    .find('[')
-                    .map(|pos| format!(" {}", stem[pos..].trim()))
-                    .unwrap_or_default();
-                (format!("{}{}.cdg", base_name, qualifier), "cdg")
+                if per_track_cdg {
+                    // Per-track sidecar: rename exactly like its paired .bin.
+                    let Some(num) = extract_track_num(&name) else { continue };
+                    let suffix = format_track_suffix(num, track_total);
+                    (format!("{} {}.cdg", base_name, suffix), "cdg")
+                } else {
+                    // Single monolithic CDG subcode — keep optional `[variant]` qualifier.
+                    let stem = path.file_stem().unwrap_or_default().to_string_lossy().to_string();
+                    let qualifier = stem
+                        .find('[')
+                        .map(|pos| format!(" {}", stem[pos..].trim()))
+                        .unwrap_or_default();
+                    (format!("{}{}.cdg", base_name, qualifier), "cdg")
+                }
             }
             _ => continue,
         };
@@ -423,6 +478,22 @@ fn update_cue_content(content: &str, renames: &[RenamePreview]) -> String {
         }
     }
     result
+}
+
+/// Build a fresh multi-bin CUE from the renamed bin list.
+/// Used when the existing CUE references filenames that don't exist on disk.
+fn gen_fresh_multi_bin_cue(bin_renames: &[RenamePreview]) -> String {
+    let mut sorted: Vec<&RenamePreview> = bin_renames.iter().collect();
+    sorted.sort_by_key(|r| extract_track_num(&r.new_name).unwrap_or(0));
+
+    let mut out = String::new();
+    for r in &sorted {
+        let num = extract_track_num(&r.new_name).unwrap_or(0);
+        out += &format!("FILE \"{}\" BINARY\n", r.new_name);
+        out += &format!("  TRACK {:02} AUDIO\n", num);
+        out += "    INDEX 01 00:00:00\n";
+    }
+    out
 }
 
 // ── Tauri commands ─────────────────────────────────────────────────────────────
@@ -471,7 +542,7 @@ pub fn scan_folder(folder: String) -> Result<ScanResult, String> {
         match ext.as_str() {
             "bin" => {
                 bin_count += 1;
-                // Fall back to extracting from a bin name only if no CUE seen yet
+                // Try to extract base from existing "(Track N)" style name
                 if detected_base_name.is_none() {
                     let lower = name.to_lowercase();
                     if let Some(pos) = lower.find(" (track ") {
@@ -481,18 +552,32 @@ pub fn scan_folder(folder: String) -> Result<ScanResult, String> {
             }
             "cue" => {
                 cue_found = true;
-                // Prefer the CUE stem as the base name — it's the canonical identifier
+                // Use the CUE stem only if it looks like a real title (not a generic name
+                // like "cue", "disc", "track", etc.)
                 let stem = path
                     .file_stem()
                     .unwrap_or_default()
                     .to_string_lossy()
                     .to_string();
-                if !stem.is_empty() {
+                let is_generic = stem.len() < 4
+                    || matches!(stem.to_lowercase().as_str(), "cue" | "disc" | "track" | "cd");
+                if !stem.is_empty() && !is_generic {
                     detected_base_name = Some(stem);
                 }
             }
             "cdg" => cdg_found = true,
             _ => {}
+        }
+    }
+
+    // Last resort: use the folder name itself (handles rips where filenames carry
+    // no useful title info but the folder is named correctly).
+    if detected_base_name.is_none() {
+        if let Some(folder_name) = folder.file_name() {
+            let name = folder_name.to_string_lossy().to_string();
+            if !name.is_empty() {
+                detected_base_name = Some(name);
+            }
         }
     }
 
@@ -650,9 +735,23 @@ pub fn do_rename(
 
         let content = fs::read_to_string(&old_path)
             .map_err(|e| format!("Cannot read {}: {e}", cue.old_name))?;
-        let updated = update_cue_content(&content, &renames);
 
-        fs::write(&new_path, &updated)
+        let bin_renames: Vec<RenamePreview> =
+            renames.iter().filter(|r| r.kind == "bin").cloned().collect();
+
+        // If the CUE doesn't reference any of the actual files on disk, the sheet
+        // is stale/wrong (e.g. ripped under a different name). Regenerate from scratch.
+        let cue_references_actual_files =
+            bin_renames.iter().any(|r| content.contains(&r.old_name));
+
+        let new_content = if !cue_references_actual_files && bin_renames.len() > 1 {
+            emit_log(&app, "  CUE references unknown filenames — regenerating from actual files");
+            gen_fresh_multi_bin_cue(&bin_renames)
+        } else {
+            update_cue_content(&content, &renames)
+        };
+
+        fs::write(&new_path, &new_content)
             .map_err(|e| format!("Cannot write {}: {e}", cue.new_name))?;
         if old_path != new_path {
             fs::remove_file(&old_path)
