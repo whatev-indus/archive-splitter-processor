@@ -1,0 +1,39 @@
+name: Build macOS ARM
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-macos-arm:
+    name: macOS ARM (Apple Silicon)
+    runs-on: macos-14   # native M1/M2 runner
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust (stable + aarch64 target)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - name: Cache Cargo registry & build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Install Tauri CLI v2
+        run: cargo install tauri-cli --version "^2" --locked
+
+      - name: Build
+        env:
+          APPLE_SIGNING_IDENTITY: "-"   # ad-hoc signing; replace with cert for distribution
+        run: cargo tauri build --target aarch64-apple-darwin
+
+      - name: Upload DMG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: archive-splitter-processor-macos-arm
+          path: src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
+          if-no-files-found: warn

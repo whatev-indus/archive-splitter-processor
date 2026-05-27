@@ -1,0 +1,12 @@
+# Rust / Cargo build artifacts
+src-tauri/target/
+
+# Local data folders
+inbox/
+outbox/
+
+# macOS
+.DS_Store
+
+# Claude Code local settings
+.claude/settings.local.json
