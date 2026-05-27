@@ -22,7 +22,7 @@
     ]
   },
   "build": {
-    "frontendDist": "../",
+    "frontendDist": "../ui",
     "beforeBuildCommand": "",
     "beforeDevCommand": ""
   },
