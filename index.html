@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Archive Splitter Processor</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app">
+    <header>
+      <h1>Archive Splitter Processor</h1>
+      <p class="subtitle">Rename · Merge/Split · Zip · Upload to Archive.org</p>
+    </header>
+
+    <!-- Source + Output folder -->
+    <section class="card">
+      <div class="row gap-md">
+        <div class="field flex-1">
+          <label class="field-label">Source Folder</label>
+          <div class="row gap-sm">
+            <input type="text" id="folder" class="input flex-1" placeholder="Select source folder…" readonly />
+            <button id="browse-btn" class="btn">Browse…</button>
+          </div>
+        </div>
+        <div class="field flex-1">
+          <label class="field-label">Output Folder <span class="hint-inline">(optional — defaults to source)</span></label>
+          <div class="row gap-sm">
+            <input type="text" id="output-folder" class="input flex-1" placeholder="Same as source" readonly />
+            <button id="browse-output-btn" class="btn">Browse…</button>
+          </div>
+        </div>
+      </div>
+      <div id="scan-info" class="scan-info hidden"></div>
+    </section>
+
+    <!-- Base name -->
+    <section class="card">
+      <label class="field-label" for="base-name">Base File Name</label>
+      <input
+        type="text"
+        id="base-name"
+        class="input"
+        placeholder="Artist - Album Title (Year)"
+      />
+      <p class="hint">Applied to .cue, .cdg, and all .bin files before the " (Track ##)" suffix.</p>
+    </section>
+
+    <!-- Bin layout / merge / split -->
+    <section class="card" id="layout-card">
+      <div class="section-header">
+        <span class="section-title">Bin Layout</span>
+        <span id="layout-badge" class="badge badge-dim">unknown</span>
+      </div>
+      <p id="layout-desc" class="hint" style="margin-top:0">Select a folder to detect the disc layout.</p>
+      <div class="row gap-sm" id="layout-actions" style="display:none">
+        <button id="merge-btn" class="btn" disabled title="Combine multiple per-track .bin files into one">Merge → Single .bin</button>
+        <button id="split-btn" class="btn" disabled title="Extract each track from a single .bin into separate files">Split → Per-track .bins</button>
+      </div>
+    </section>
+
+    <!-- Archive.org -->
+    <section class="card">
+      <div class="section-header">
+        <span class="section-title">Archive.org</span>
+        <label class="toggle-label">
+          <input type="checkbox" id="upload-toggle" />
+          Upload after zipping
+        </label>
+      </div>
+
+      <div id="archive-fields">
+        <div class="row gap-md">
+          <div class="field flex-1">
+            <label class="field-label" for="username">Username / Email</label>
+            <input type="text" id="username" class="input" placeholder="your@email.com" autocomplete="username" />
+          </div>
+          <div class="field flex-1">
+            <label class="field-label" for="password">Password</label>
+            <input type="password" id="password" class="input" placeholder="••••••••" autocomplete="current-password" />
+          </div>
+        </div>
+        <div class="field">
+          <label class="field-label" for="identifier">Identifier <span class="hint-inline">(auto-derived — edit if needed)</span></label>
+          <input type="text" id="identifier" class="input" placeholder="artist-album-title-year" />
+        </div>
+      </div>
+    </section>
+
+    <!-- Actions -->
+    <section class="card actions-card">
+      <div class="action-group">
+        <button id="preview-btn" class="btn">Preview Rename</button>
+        <button id="rename-btn" class="btn">Rename Files</button>
+        <button id="zip-btn" class="btn">Create ZIP</button>
+        <button id="upload-btn" class="btn" disabled>Upload Only</button>
+      </div>
+      <button id="run-all-btn" class="btn btn-primary">Run All</button>
+    </section>
+
+    <!-- Log -->
+    <section class="card log-card">
+      <div class="log-header">
+        <span class="section-title">Log</span>
+        <button id="clear-log-btn" class="btn btn-ghost btn-sm">Clear</button>
+      </div>
+      <div id="log" class="log"></div>
+    </section>
+  </div>
+
+  <script src="main.js"></script>
+</body>
+</html>
