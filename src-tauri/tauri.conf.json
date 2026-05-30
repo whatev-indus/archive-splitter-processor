@@ -1,6 +1,6 @@
 {
   "productName": "Archive Splitter Processor",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "identifier": "com.whatev-indus.archive-splitter-processor",
   "app": {
     "withGlobalTauri": true,
@@ -11,10 +11,10 @@
       {
         "title": "Archive Splitter Processor",
         "width": 760,
-        "height": 800,
+        "height": 1000,
         "minWidth": 760,
         "maxWidth": 760,
-        "minHeight": 700,
+        "minHeight": 720,
         "resizable": true,
         "fullscreen": false,
         "center": true
@@ -29,6 +29,12 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "icon": []
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
   }
 }

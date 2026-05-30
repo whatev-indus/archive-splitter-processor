@@ -9,6 +9,7 @@ const { listen } = window.__TAURI__.event;
 let currentFolder = '';
 let currentOutputFolder = '';
 let currentZipPath = '';
+let currentLayoutKind = '';
 
 // ── DOM refs ──────────────────────────────────────────────────────────────────
 
@@ -54,12 +55,26 @@ function logSep()         { logDim('─'.repeat(52)); }
 
 // ── Tauri log events ──────────────────────────────────────────────────────────
 
+// Reused element for live, in-place upload progress (ia's `\r`-updated bar).
+let progressEl = null;
+
 listen('log', (event) => {
   const msg = event.payload;
-  if (msg.startsWith('[stderr]'))                         logWarn(msg);
-  else if (msg.startsWith('Upload complete'))             logOk(msg);
-  else if (/error|fail/i.test(msg))                      logWarn(msg);
+  progressEl = null; // a committed line finalizes any in-place progress line
+  if (msg.startsWith('Upload complete'))                  logOk(msg);
+  else if (/error|fail/i.test(msg))                       logWarn(msg);
   else                                                    logLine(msg);
+});
+
+// Stream the progress bar as in-place updates rather than flooding the log.
+listen('upload-progress', (event) => {
+  if (!progressEl) {
+    progressEl = document.createElement('div');
+    progressEl.className = 'line-dim';
+    logEl.appendChild(progressEl);
+  }
+  progressEl.textContent = event.payload;
+  logEl.scrollTop = logEl.scrollHeight;
 });
 
 // ── Layout badge helpers ───────────────────────────────────────────────────────
@@ -67,12 +82,14 @@ listen('log', (event) => {
 const LAYOUT_META = {
   'multi-bin':           { cls: 'badge-multi',  label: 'Multi-bin',        desc: (t, b) => `${b} separate .bin files, ${t} tracks total.` },
   'single-multi-track':  { cls: 'badge-split',  label: 'Single-bin multi', desc: (t)    => `Single .bin, ${t} tracks — can be split into per-track files.` },
+  'img-multi-track':     { cls: 'badge-split',  label: 'Single .img',      desc: (t)    => `Raw .img disc image, ${t} tracks — can be split into per-track .bin files.` },
   'single-single-track': { cls: 'badge-single', label: 'Single-bin',       desc: ()     => 'Single .bin, single track.' },
   'no-cue':              { cls: 'badge-error',  label: 'No CUE',           desc: ()     => 'No .cue sheet found in this folder.' },
   'unknown':             { cls: 'badge-dim',    label: 'Unknown',           desc: ()     => 'Could not determine layout.' },
 };
 
 function setLayout(kind, trackCount, binCount) {
+  currentLayoutKind = kind;
   const meta = LAYOUT_META[kind] || { cls: 'badge-error', label: kind, desc: () => kind };
 
   layoutBadge.textContent = meta.label;
@@ -80,10 +97,11 @@ function setLayout(kind, trackCount, binCount) {
   layoutDesc.textContent  = meta.desc(trackCount, binCount);
 
   layoutActions.style.display = 'flex';
-  splitBtn.disabled = (kind !== 'single-multi-track');
+  splitBtn.disabled = (kind !== 'single-multi-track' && kind !== 'img-multi-track');
 }
 
 function resetLayout() {
+  currentLayoutKind = '';
   layoutBadge.textContent = 'unknown';
   layoutBadge.className   = 'badge badge-dim';
   layoutDesc.textContent  = 'Select a folder to detect the disc layout.';
@@ -127,7 +145,11 @@ async function scanFolder(folder) {
     const okBad = (ok, label) =>
       `<span class="${ok ? 'ok' : 'bad'}">${ok ? '✓' : '✗'}</span> ${label}`;
 
-    parts.push(okBad(r.bin_count > 0,  `${r.bin_count} .bin track${r.bin_count !== 1 ? 's' : ''}`));
+    if (r.img_found && r.bin_count === 0) {
+      parts.push(okBad(true, '.img disc image'));
+    } else {
+      parts.push(okBad(r.bin_count > 0, `${r.bin_count} .bin track${r.bin_count !== 1 ? 's' : ''}`));
+    }
     parts.push(okBad(r.cue_found,       '.cue sheet'));
     parts.push(okBad(r.cdg_found,       '.cdg subcode'));
 
@@ -203,7 +225,7 @@ function setWorking(working) {
 splitBtn.addEventListener('click', async () => {
   if (!validateBase()) return;
   logSep();
-  logHeading('Splitting .bin → per-track files…');
+  logHeading('Splitting disc image → per-track files…');
   setWorking(true);
   try {
     const created = await invoke('bin_split', {
@@ -211,6 +233,7 @@ splitBtn.addEventListener('click', async () => {
       baseName: baseNameInput.value.trim(),
     });
     logOk(`Split into ${created.length} track file(s).`);
+    await runVerify();
     await detectLayout(currentFolder);
   } catch (err) {
     logError(`Split failed: ${err}`);
@@ -219,11 +242,46 @@ splitBtn.addEventListener('click', async () => {
   }
 });
 
+// ── Verify split bins against redumper logs ─────────────────────────────────────
+
+// Returns the report. Logs a summary; does not throw on mismatch.
+async function runVerify() {
+  const report = await invoke('verify_tracks', { folder: currentFolder });
+  if (!report.log_found) {
+    logDim('  No redumper log found — verification skipped.');
+  } else if (report.all_ok) {
+    logOk(`  Verified ${report.checked} track(s) against redumper log — all match.`);
+  } else {
+    const bad = report.results.filter(r => !r.ok).length;
+    logError(`  ${bad} of ${report.checked} track(s) do NOT match the redumper log.`);
+  }
+  return report;
+}
+
 // ── Preview rename ────────────────────────────────────────────────────────────
 
 previewBtn.addEventListener('click', async () => {
   if (!validateBase()) return;
   logSep();
+
+  // Not yet split (single .bin / .img disc image) → preview the per-track files
+  // the Split step will produce, so you can see how they'll be named.
+  const splittable = currentLayoutKind === 'img-multi-track'
+                  || currentLayoutKind === 'single-multi-track';
+  if (splittable) {
+    logHeading('Preview — files after Split:');
+    try {
+      const names = await invoke('preview_split', {
+        folder: currentFolder,
+        baseName: baseNameInput.value.trim(),
+      });
+      names.forEach(n => logOk(`  + ${n}`));
+    } catch (err) {
+      logError(`Preview failed: ${err}`);
+    }
+    return;
+  }
+
   logHeading('Preview rename:');
   try {
     const renames = await invoke('preview_rename', {
@@ -315,25 +373,41 @@ runAllBtn.addEventListener('click', async () => {
   logHeading('Running full pipeline…');
   setWorking(true);
 
+  const baseName = baseNameInput.value.trim();
+  const splittable = currentLayoutKind === 'img-multi-track'
+                  || currentLayoutKind === 'single-multi-track';
+  const totalSteps = splittable ? 5 : 3;
+  let step = 0;
+  const stepHead = (label) => logHeading(`Step ${++step}/${totalSteps} — ${label}`);
+
   try {
-    logHeading('Step 1/3 — Rename');
-    await invoke('do_rename', {
-      folder: currentFolder,
-      baseName: baseNameInput.value.trim(),
-    });
+    if (splittable) {
+      stepHead('Split');
+      const created = await invoke('bin_split', { folder: currentFolder, baseName });
+      logOk(`Split into ${created.length} track file(s).`);
+
+      stepHead('Verify against redumper log');
+      const report = await runVerify();
+      if (report.log_found && !report.all_ok) {
+        throw new Error('track hashes do not match the redumper log — aborting before upload.');
+      }
+    }
+
+    stepHead('Rename');
+    await invoke('do_rename', { folder: currentFolder, baseName });
     logOk('Rename complete.');
 
-    logHeading('Step 2/3 — Create ZIP');
+    stepHead('Create ZIP');
     const zipPath = await invoke('create_zip', {
       folder: currentFolder,
-      baseName: baseNameInput.value.trim(),
+      baseName,
       outputFolder: currentOutputFolder || null,
     });
     currentZipPath = zipPath;
     logOk(`ZIP complete: ${zipPath}`);
 
     if (uploadToggle.checked) {
-      logHeading('Step 3/3 — Upload to Archive.org');
+      stepHead('Upload to Archive.org');
       await invoke('upload_to_archive', {
         zipPath,
         identifier: identifierInput.value.trim(),
@@ -341,7 +415,7 @@ runAllBtn.addEventListener('click', async () => {
         password: passwordInput.value,
       });
     } else {
-      logDim('Step 3/3 — Upload skipped (toggle is off).');
+      stepHead('Upload skipped (toggle is off)');
     }
 
     logSep();

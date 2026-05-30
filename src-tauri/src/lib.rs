@@ -6,9 +6,11 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::scan_folder,
             commands::detect_layout,
+            commands::preview_split,
             commands::preview_rename,
             commands::do_rename,
             commands::bin_split,
+            commands::verify_tracks,
             commands::create_zip,
             commands::upload_to_archive,
             commands::derive_identifier,

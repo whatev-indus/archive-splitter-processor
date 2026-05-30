@@ -8,11 +8,6 @@
 </head>
 <body>
   <div class="app">
-    <header>
-      <h1>Archive Splitter Processor</h1>
-      <p class="subtitle">Rename · Split · Zip · Upload to Archive.org</p>
-    </header>
-
     <!-- Source + Output folder -->
     <section class="card">
       <div class="row gap-md">
@@ -41,7 +36,7 @@
         type="text"
         id="base-name"
         class="input"
-        placeholder="Artist - Album Title (Year)"
+        placeholder="Title Goes Here (Country)"
       />
       <p class="hint">Applied to .cue, .cdg, and all .bin files before the " (Track ##)" suffix.</p>
     </section>
@@ -91,7 +86,7 @@
       <div class="action-group">
         <button id="preview-btn" class="btn">Preview Rename</button>
         <button id="rename-btn" class="btn">Rename Files</button>
-        <button id="zip-btn" class="btn">Create ZIP</button>
+        <button id="zip-btn" class="btn">Create ZIP (Store)</button>
         <button id="upload-btn" class="btn" disabled>Upload Only</button>
       </div>
       <button id="run-all-btn" class="btn btn-primary">Run All</button>
