@@ -120,7 +120,9 @@ jobs:
 
       - name: Resolve version
         id: ver
-        run: echo "version=$(grep '^version' src-tauri/Cargo.toml | head -1 | cut -d'\"' -f2)" >> "$GITHUB_OUTPUT"
+        run: |
+          VERSION=$(grep '^version' src-tauri/Cargo.toml | head -1 | cut -d'"' -f2)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Download all build artifacts
         uses: actions/download-artifact@v4

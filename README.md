@@ -25,4 +25,10 @@ clean base name, zip, and upload — all from one window.
 and verify steps are skipped when the disc isn't a single-file image, and the
 pipeline aborts before upload if verification fails).
 
+## License
+
+Licensed under the [GNU General Public License v2.0](LICENSE).
+
+## Credits
+
 Thanks to https://github.com/putnam/binmerge for referential logic.

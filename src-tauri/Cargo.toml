@@ -2,6 +2,7 @@
 name = "archive-splitter-processor"
 version = "0.2.0"
 edition = "2021"
+license = "GPL-2.0-only"
 
 [lib]
 name = "archive_splitter_processor_lib"
