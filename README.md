@@ -24,3 +24,5 @@ clean base name, zip, and upload — all from one window.
 **Run All** chains these steps: split → verify → rename → zip → upload (the split
 and verify steps are skipped when the disc isn't a single-file image, and the
 pipeline aborts before upload if verification fails).
+
+Thanks to https://github.com/putnam/binmerge for referential logic.
